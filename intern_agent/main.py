@@ -1,3 +1,9 @@
+"""
+Агент для автоматизированного подбора и фильтрации IT-вакансий.
+Скрипт читает данные из CSV, проводит первичную rule-based фильтрацию, 
+а затем использует LLM для ранжирования и выбора Топ-5 подходящих вариантов.
+"""
+
 import logging
 import os
 from pathlib import Path
@@ -6,21 +12,25 @@ import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Настройка логирования для отслеживания этапов работы агента
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+# Константы путей к файлам
 VACANCIES_PATH = Path("vacancies.csv")
 CRITERIA_PATH = Path("criteria.md")
 REPORT_PATH = Path("report.md")
 
+# Настройки для подключения к LLM (в данном случае через Groq API)
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 TOP_N = 5
-MAX_AGE_DAYS = 90
+MAX_AGE_DAYS = 90  # Максимальный срок публикации вакансии (в днях)
 
+# Ключевые слова для фильтрации
 REMOTE_KEYWORDS = ("remote", "удален", "удалён")
 SKILL_KEYWORDS = ("python", "c++", "алгоритм", "cpp")
 DEFAULT_CRITERIA = (
@@ -30,21 +40,28 @@ DEFAULT_CRITERIA = (
 
 
 def is_remote(location: object) -> bool:
+    """Проверяет, подразумевает ли локация удаленный формат работы."""
     text = str(location).lower()
     return any(keyword in text for keyword in REMOTE_KEYWORDS)
 
 
 def matches_skills(requirements: object) -> bool:
+    """Проверяет наличие ключевых технических навыков в требованиях вакансии."""
     text = str(requirements).lower()
     return any(keyword in text for keyword in SKILL_KEYWORDS)
 
 
 def log_filter_step(stage: str, before: int, after: int) -> None:
+    """Вспомогательная функция для логирования результатов каждого этапа фильтрации."""
     removed = before - after
     logger.info("%s: удалено %d, осталось %d", stage, removed, after)
 
 
 def load_vacancies(path: Path) -> pd.DataFrame:
+    """
+    Загружает вакансии из CSV и проводит многоступенчатую очистку данных:
+    удаление битых строк, дублей и нерелевантных по базовым критериям позиций.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Файл не найден: {path}")
 
@@ -57,6 +74,7 @@ def load_vacancies(path: Path) -> pd.DataFrame:
     initial_count = len(df)
     logger.info("Загружено строк из CSV: %d", initial_count)
 
+    # Базовая очистка датафрейма от мусора
     df = df.dropna(how="all")
     log_filter_step("Удаление полностью пустых строк", initial_count, len(df))
 
@@ -68,6 +86,7 @@ def load_vacancies(path: Path) -> pd.DataFrame:
     df = df.drop_duplicates(subset=["id"], keep="first")
     log_filter_step("Удаление дублей по id", before, len(df))
 
+    # Бизнес-фильтрация по уровню, формату и скиллам
     before = len(df)
     df = df[df["is_junior"] == True]  # noqa: E712
     log_filter_step("Фильтр junior/стажировка (is_junior=True)", before, len(df))
@@ -80,6 +99,7 @@ def load_vacancies(path: Path) -> pd.DataFrame:
     df = df[df["requirements"].apply(matches_skills)]
     log_filter_step("Фильтр навыков (Python/C++/алгоритмы)", before, len(df))
 
+    # Фильтрация по дате публикации (отсекаем неактуальные)
     if "published_date" in df.columns:
         before = len(df)
         df["published_date"] = pd.to_datetime(df["published_date"], errors="coerce")
@@ -97,6 +117,7 @@ def load_vacancies(path: Path) -> pd.DataFrame:
 
 
 def load_criteria(path: Path) -> str:
+    """Загружает профиль пользователя. При отсутствии файла использует дефолтные критерии."""
     if not path.exists():
         logger.warning("Файл %s не найден, используются критерии по умолчанию", path)
         return DEFAULT_CRITERIA
@@ -115,6 +136,7 @@ def load_criteria(path: Path) -> str:
 
 
 def build_llm_prompt(vacancies: pd.DataFrame, criteria: str) -> str:
+    """Формирует структурированный промпт для LLM с передачей отфильтрованных вакансий."""
     vacancies_text = vacancies.to_string(index=False)
     return (
         "Ты помощник по подбору вакансий.\n\n"
@@ -136,6 +158,10 @@ def build_llm_prompt(vacancies: pd.DataFrame, criteria: str) -> str:
 
 
 def ask_llm_for_top_vacancies(vacancies: pd.DataFrame, criteria: str) -> str:
+    """
+    Отправляет запрос в LLM через совместимый с Groq клиент.
+    Включает обработку основных ошибок API (лимиты, авторизация).
+    """
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key or api_key == "your_key_here":
         raise ValueError("Укажите действительный GROQ_API_KEY в файле .env")
@@ -147,6 +173,8 @@ def ask_llm_for_top_vacancies(vacancies: pd.DataFrame, criteria: str) -> str:
 
     model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip()
     prompt = build_llm_prompt(vacancies, criteria)
+    
+    # Инициализация клиента с подменой base_url для работы с бесплатным API Groq
     client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
 
     try:
@@ -159,7 +187,7 @@ def ask_llm_for_top_vacancies(vacancies: pd.DataFrame, criteria: str) -> str:
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
+            temperature=0.3, # Низкая температура для более предсказуемых и строгих ответов
         )
     except Exception as exc:
         error_name = type(exc).__name__
@@ -178,6 +206,10 @@ def ask_llm_for_top_vacancies(vacancies: pd.DataFrame, criteria: str) -> str:
 
 
 def build_fallback_report(vacancies: pd.DataFrame, error: str) -> str:
+    """
+    Создает запасной отчет на основе Python-логики, если API LLM недоступно.
+    Гарантирует, что скрипт отработает до конца при любых условиях.
+    """
     logger.warning("Используется fallback-отчёт без LLM: %s", error)
 
     rows = vacancies.head(TOP_N)
@@ -210,14 +242,17 @@ def build_fallback_report(vacancies: pd.DataFrame, error: str) -> str:
 
 
 def save_report(content: str, path: Path) -> None:
+    """Сохраняет итоговый Markdown-отчет на диск."""
     path.write_text(content, encoding="utf-8")
     logger.info("Отчет сохранен в %s", path)
 
 
 def main() -> None:
+    """Главная функция оркестрации workflow агента."""
     load_dotenv(override=True)
     logger.info("Запуск агента фильтрации вакансий")
 
+    # 1. Чтение и валидация данных
     try:
         vacancies = load_vacancies(VACANCIES_PATH)
     except (FileNotFoundError, ValueError) as exc:
@@ -228,9 +263,11 @@ def main() -> None:
         )
         return
 
+    # 2. Подгрузка критериев пользователя
     criteria = load_criteria(CRITERIA_PATH)
     logger.info("Критерии загружены (%d символов)", len(criteria))
 
+    # Проверка, остались ли вакансии после жесткой фильтрации Pandas
     if vacancies.empty:
         logger.warning("После фильтрации не осталось вакансий для анализа")
         save_report(
@@ -239,12 +276,14 @@ def main() -> None:
         )
         return
 
+    # 3. Анализ с помощью нейросети (или запасной план)
     try:
         report = ask_llm_for_top_vacancies(vacancies, criteria)
         logger.info("LLM успешно сформировал отчёт")
     except Exception as exc:
         report = build_fallback_report(vacancies, str(exc))
 
+    # 4. Выгрузка результата
     save_report(report, REPORT_PATH)
     logger.info("Работа агента завершена")
 
