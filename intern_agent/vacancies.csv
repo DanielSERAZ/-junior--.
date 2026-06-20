@@ -1,0 +1,16 @@
+id,title,company,location,salary,requirements,is_junior,published_date
+1,Junior Python Developer,CodeLab,Remote,90000,"Python, алгоритмы, базовая математика",True,2026-06-10
+2,Стажер C++ Developer,AlgoSoft,Remote,60000,"C++, алгоритмы, структуры данных",True,2026-06-05
+3,Junior Backend Engineer (Python),DataFlow,Удаленно,85000,"Python, REST API, алгоритмы",True,2026-05-28
+4,Junior Data Analyst,Analytics Co,Москва офис,70000,"Python, SQL, pandas",True,2026-06-01
+5,Junior Frontend Developer,WebStudio,Remote,80000,"JavaScript, React, HTML/CSS",True,2026-06-08
+6,Стажер ML Engineer,AI Start,Remote,65000,"Python, алгоритмы, базовый ML",True,2026-06-15
+7,Junior DevOps Engineer,CloudOps,Remote,95000,"Docker, Linux, CI/CD",True,2026-05-20
+8,Junior C++ Game Developer,GameLab,Remote,75000,"C++, алгоритмы, Unreal Engine",True,2026-06-02
+9,Intern Backend (Python),StartupX,Remote,55000,"Python, алгоритмы, Git",True,2025-12-01
+10,Junior Algorithms Developer,MathSoft,Remote,72000,"Python, C++, алгоритмы, математика",True,2026-06-18
+1,Junior Python Developer,CodeLab,Remote,90000,"Python, алгоритмы, базовая математика",True,2026-06-10
+12,Senior Software Architect,BigTech,Москва,350000,"10+ лет опыта, архитектура распределенных систем",False,2026-06-01
+13,Маркетолог,SMM Agency,Санкт-Петербург,70000,"SMM, контент-маркетинг, таргет",False,2026-06-12
+14,Team Lead Python,FinTech Pro,Москва,280000,"Python, управление командой, 5+ лет опыта",False,2026-05-15
+,,,,,,,
